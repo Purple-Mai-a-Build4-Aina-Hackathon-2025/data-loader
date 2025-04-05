@@ -17,9 +17,9 @@
         nativeBuildInputs = with pkgs; [
           cargo
           rustc
-          # Probably don't need this but keeping it around I guess
-          # pkg-config
-          # openssl
+          # Ok we need this
+          pkg-config
+          openssl
         ];
       };
     });

@@ -1,11 +1,17 @@
-use std::io::{self, Read};
+use core::panic;
+use std::{
+    fs::read_to_string,
+    io::{self, Read},
+    str::FromStr,
+};
 
 use clap::Parser;
 use cli::CliArgs;
-use csv::Reader;
 use dotenvy::dotenv;
+use semver::{Version, VersionReq};
 use serde::Deserialize;
-use sqlx::{query, types::BigDecimal, PgPool};
+use serde_json::Value;
+use sqlx::{query, PgPool};
 
 pub mod cli;
 
@@ -21,74 +27,59 @@ async fn main() -> eyre::Result<()> {
     };
     let pool = PgPool::connect(&conn).await?;
 
-    if let Some(file) = args.file {
-        handle(csv::Reader::from_path(&file)?, pool).await?
+    let unknown: Unknown = if let Some(file) = args.file {
+        serde_json::from_str(&read_to_string(file)?)?
     } else {
-        handle(csv::Reader::from_reader(io::stdin()), pool).await?
+        let mut buf = String::new();
+        io::stdin().lock().read_to_string(&mut buf)?;
+        serde_json::from_str(&buf)?
     };
-    Ok(())
-}
-async fn handle<T>(mut rdr: Reader<T>, pool: PgPool) -> eyre::Result<()>
-where
-    T: Read,
-{
-    for result in rdr.deserialize() {
-        let r: Record = result?;
-        println!("{:?}", r);
-        query!("
-        INSERT INTO nutrient_reading (
-            site_id, sensor_id, tec, ph, sulfur, phosphorous, olsen_p, calcium,
-            magnesium, potassium, sodium, boron, iron, manganese, copper, zinc, aluminum, total_carbon_percentage,
-            total_nitrogen_percentage, nitrate, ammonium, soil_health_score)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)",
-        1, 1, r.tec, r.ph, r.sulfur, r.phosphorus, r.olsen_p, r.calcium, r.magnesium, r.potassium, r.sodium, r.boron, r.iron, r.manganese,
-        r.copper, r.zinc, r.aluminum, r.total_carbon, r.total_nitrogen, r.nitrate, r.ammonium, r.soil_health_score)
-            .execute(&pool)
-            .await?;
-    }
+    let sensor = if let Some(sensor) = query!(
+        "SELECT id FROM \"Sensor\" WHERE serial_id = $1",
+        unknown.serial_id
+    )
+    .fetch_optional(&pool)
+    .await?
+    {
+        sensor
+    } else {
+        panic!("Sensor with serial {} not found", unknown.serial_id)
+    }.id;
+
+    let version = Version::from_str(&unknown.version)?;
+    match unknown.kind {
+        SensorKind::Temperature => {
+            let req = VersionReq::parse("<=0.0.1")?;
+            if !req.matches(&version) {
+                panic!("Cannot handle version")
+            }
+
+            // then insert the temperature
+            let data: Vec<TemperatureReading> = serde_json::from_value(Value::Array(unknown.data))?;
+        }
+    };
+
     Ok(())
 }
 
 #[derive(Debug, Deserialize)]
-struct Record {
-    #[serde(rename = "TEC")]
-    tec: BigDecimal,
-    #[serde(rename = "pH")]
-    ph: BigDecimal,
-    #[serde(rename = "Sulfur")]
-    sulfur: i32,
-    #[serde(rename = "Phosphorus")]
-    phosphorus: i32,
-    #[serde(rename = "Olsen P")]
-    olsen_p: i32,
-    #[serde(rename = "Calcium")]
-    calcium: i32,
-    #[serde(rename = "Magnesium")]
-    magnesium: i32,
-    #[serde(rename = "Potassium")]
-    potassium: i32,
-    #[serde(rename = "Sodium")]
-    sodium: i32,
-    #[serde(rename = "Boron")]
-    boron: BigDecimal,
-    #[serde(rename = "Iron")]
-    iron: i32,
-    #[serde(rename = "Manganese")]
-    manganese: i32,
-    #[serde(rename = "Copper")]
-    copper: BigDecimal,
-    #[serde(rename = "Zinc")]
-    zinc: BigDecimal,
-    #[serde(rename = "Aluminum")]
-    aluminum: i32,
-    #[serde(rename = "Total Carbon %")]
-    total_carbon: BigDecimal,
-    #[serde(rename = "Total Nitrogen %")]
-    total_nitrogen: BigDecimal,
-    #[serde(rename = "Nitrate")]
-    nitrate: i32,
-    #[serde(rename = "Ammonium")]
-    ammonium: i32,
-    #[serde(rename = "Soil Health Score")]
-    soil_health_score: i32,
+struct Unknown {
+    version: String,
+    #[serde(rename = "type")]
+    kind: SensorKind,
+    serial_id: String,
+    data: Vec<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum SensorKind {
+    Temperature,
+}
+
+#[derive(Debug, Deserialize)]
+struct TemperatureReading {
+    reading: u32,
+    timestamp: u64,
+    temperature: f64,
 }

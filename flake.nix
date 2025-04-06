@@ -17,7 +17,7 @@
         nativeBuildInputs = with pkgs; [
           cargo
           rustc
-          # Ok we need this
+          sqlx-cli
           pkg-config
           openssl
         ];

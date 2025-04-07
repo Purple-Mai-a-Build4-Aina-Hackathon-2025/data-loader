@@ -5,6 +5,7 @@ use std::{
     str::FromStr,
 };
 
+use chrono::{TimeDelta, Utc};
 use clap::Parser;
 use cli::CliArgs;
 use dotenvy::dotenv;
@@ -44,7 +45,8 @@ async fn main() -> eyre::Result<()> {
         sensor
     } else {
         panic!("Sensor with serial {} not found", unknown.serial_id)
-    }.id;
+    }
+    .id;
 
     let version = Version::from_str(&unknown.version)?;
     match unknown.kind {
@@ -56,6 +58,22 @@ async fn main() -> eyre::Result<()> {
 
             // then insert the temperature
             let data: Vec<TemperatureReading> = serde_json::from_value(Value::Array(unknown.data))?;
+
+            for data in data {
+                let timestamp = Utc::now()
+                    .checked_add_signed(TimeDelta::seconds(data.timestamp))
+                    .expect("adding shouldnt fail")
+                    .naive_utc();
+                query!(
+                    "INSERT INTO \"Metric\" (value, timestamp, type, \"sensorID\")
+                    VALUES ($1, $2, 'temp', $3)",
+                    data.temperature,
+                    timestamp,
+                    sensor
+                )
+                .execute(&pool)
+                .await?;
+            }
         }
     };
 
@@ -80,6 +98,6 @@ enum SensorKind {
 #[derive(Debug, Deserialize)]
 struct TemperatureReading {
     reading: u32,
-    timestamp: u64,
+    timestamp: i64,
     temperature: f64,
 }

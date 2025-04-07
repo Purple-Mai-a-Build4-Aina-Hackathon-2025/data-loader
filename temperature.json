@@ -6,32 +6,32 @@
         {
             "reading": 0,
             "timestamp": 1000,
-            "temprature": 359.89
+            "temperature": 359.89
         },
         {
             "reading": 1,
             "timestamp": 2000,
-            "temprature": 357.25
+            "temperature": 357.25
         },
         {
             "reading": 2,
             "timestamp": 3000,
-            "temprature": 357.25
+            "temperature": 357.25
         },
         {
             "reading": 3,
             "timestamp": 4000,
-            "temprature": 357.25
+            "temperature": 357.25
         },
         {
             "reading": 4,
             "timestamp": 5000,
-            "temprature": 358.13
+            "temperature": 358.13
         },
         {
             "reading": 5,
             "timestamp": 6000,
-            "temprature": 358.13
+            "temperature": 358.13
         }
     ]
 }
